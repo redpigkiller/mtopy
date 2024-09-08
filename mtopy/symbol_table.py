@@ -57,7 +57,7 @@ def semantic_analysis(ast_root: Tree.Node) -> tuple[Tree.Node, list[str]]:
                 node.body = [analyze_node(child, "function") for child in node.body]
                 symbol_table.exit_scope()
 
-            elif isinstance(node, Tree.ForLoop) or isinstance(node, Tree.ParforLoop):
+            elif isinstance(node, (Tree.ForLoop, Tree.ParforLoop)):
                 symbol_table.add_symbol(node.identifier.value.val, Tree.Identifier)
                 node.expression = analyze_node(node.expression, context)
                 symbol_table.enter_scope()
