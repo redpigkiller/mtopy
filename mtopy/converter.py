@@ -31,7 +31,7 @@ class MatlabTypeConverter(ABC):
 
     # #################### Convert matlab's special functions ####################
     @abstractmethod
-    def convert_func(self, func_name: str, arguments: list[ast.AST]) -> ast.AST:
+    def convert_func(self, func: ast.AST, arguments: list[ast.AST]) -> ast.AST:
         pass
 
     @abstractmethod

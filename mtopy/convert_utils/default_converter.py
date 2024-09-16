@@ -36,12 +36,14 @@ class DefaultConverter(MatlabTypeConverter):
     def access_struct(self, identifier: ast.AST, arguments: list[ast.AST]) -> ast.AST:
         struct_element = identifier
         for arg in arguments:
-            struct_element = ast.Subscript(value=struct_element, slice=ast.Constant(value=str(arg.id)), ctx=ast.Load())
+            if isinstance(arg, ast.Name):
+                arg = ast.Constant(value=arg.id)
+            struct_element = ast.Subscript(value=struct_element, slice=arg, ctx=ast.Load())
         return struct_element
     
-    def convert_func(self, func_name: str, arguments: list[ast.AST]) -> ast.AST:
+    def convert_func(self, func: ast.AST, arguments: list[ast.AST]) -> ast.AST:
         return ast.Call(
-            func=ast.Name(id=func_name, ctx=ast.Load()),
+            func=func,
             args=arguments if arguments else [],
             keywords=[]
         )
@@ -73,25 +75,31 @@ class DefaultConverter(MatlabTypeConverter):
         return ast.BinOp(left=left, op=ast.MatMult(), right=right)
     
     def matrix_right_division(self, left: ast.AST, right: list[ast.AST]) -> ast.AST:
-        return self.matrix_left_division(
-            left=self.transpose(left),
-            right=self.transpose(right)
-        )
+        if isinstance(left, ast.Constant) or isinstance(right, ast.Constant):
+            return self.right_division(left, right)
+        else:
+            return self.matrix_left_division(
+                left=self.transpose(left),
+                right=self.transpose(right)
+            )
     
     def matrix_left_division(self, left: ast.AST, right: list[ast.AST]) -> ast.AST:
-        return ast.Call(
-            func=ast.Attribute(
-                value=ast.Attribute(
-                    value=ast.Name(id='np', ctx=ast.Load()),
-                    attr='linalg',
+        if isinstance(left, ast.Constant) or isinstance(right, ast.Constant):
+            return self.left_division(left, right)
+        else:
+            return ast.Call(
+                func=ast.Attribute(
+                    value=ast.Attribute(
+                        value=ast.Name(id='np', ctx=ast.Load()),
+                        attr='linalg',
+                        ctx=ast.Load()
+                    ),
+                    attr='lstsq',
                     ctx=ast.Load()
                 ),
-                attr='lstsq',
-                ctx=ast.Load()
-            ),
-            args=[left, right],
-            keywords=[]
-        )
+                args=[left, right],
+                keywords=[]
+            )
     
     def power(self, left: ast.AST, right: list[ast.AST]) -> ast.AST:
         return ast.BinOp(left=left, op=ast.Pow(), right=right)

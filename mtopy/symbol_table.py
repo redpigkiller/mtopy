@@ -1,31 +1,77 @@
 from typing import *
+from dataclasses import dataclass
+from enum import Enum, auto
+from pathlib import Path
+from functools import reduce
+import operator
+import ast
 
 from parse_matlab_code import Parser, Tree
 
+class SymbolType(Enum):
+    VAR = auto()
+    IF = auto()
+    TRY = auto()
+    LOOP = auto()
+    FUNC = auto()
 
+
+
+@dataclass
 class Symbol:
-    def __init__(self, name :str, node_type: Type[Tree.Node]):
-        self.name = name
-        self.node_type = node_type
+    name: list[str]
+    typ: SymbolType
+
+
+def get_dict_by_path(root, items):
+    """Access a nested object in root by item sequence."""
+    return reduce(operator.getitem, items, root)
 
 class SymbolTable:
-    def __init__(self) -> None:
-        # Start with global scope
-        self.scopes = [{}]
+    def __init__(self, cwd: Optional[str]=None) -> None:
+        self._addpath_scope = {}
+        self._cwd_scope = {}
+        
+        self._mfile_scope = {}
+        self._mfile_scope_path = []
 
-    def enter_scope(self) -> None:
-        self.scopes.append({})
+        if cwd is not None:
+            self._cwd = Path(cwd)
+            for f in self._cwd.glob("*.m"):
+                self._cwd_scope[f.name] = f.absolute()
+
+    def cd(self, cd_cmd: str) -> None:
+        self._cwd = self._cwd / Path(cd_cmd)
+        self._cwd_scope = {}
+        for f in self._cwd.glob("*.m"):
+            self._cwd_scope[f.name] = f.absolute()
+
+    def add_path(self, path: str) -> None:
+        for f in (self._cwd / Path(path)).rglob("*.m"):
+            self._func_file_scope[f.name] = f.absolute()
+
+    def enter_scope(self, func_name: str) -> None:
+        target_dict = get_dict_by_path(self._mfile_scope, self._mfile_scope_path)
+        target_dict[func_name] = {}
+        self._mfile_scope_path.append(func_name)
 
     def exit_scope(self) -> None:
-        self.scopes.pop()
+        self._mfile_scope_path.pop()
 
-    def add_symbol(self, name: str, node_type: Type[Tree.Node]) -> None:
-        self.scopes[-1][name] = Symbol(name, node_type)
+    def add_symbol(self, target_node: ast.AST, value_node: ast.AST) -> None:
+        target_dict = get_dict_by_path(self._mfile_scope, self._mfile_scope_path)
+        target_dict[target_node] = value_node
 
     def lookup(self, name: str) -> Optional[Symbol]:
-        for scope in reversed(self.scopes):
-            if name in scope:
-                return scope[name]
+        for i in range(len(self._mfile_scope_path)):
+            scope_path = self._mfile_scope_path[:len(self._mfile_scope_path)-i]
+            target_dict = get_dict_by_path(self._mfile_scope, scope_path)
+            if name in target_dict:
+                return target_dict[name]
+
+        if name in self._mfile_scope_path:
+            return self._mfile_scope_path[name]
+
         return None
 
 class SemanticError(Exception):

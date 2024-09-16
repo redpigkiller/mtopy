@@ -5,6 +5,16 @@ from typing import *
 
 from parse_matlab_code import Parser, Tree
 
+"""
+convert use 
+
+Load symbol table
+-> 
+
+"""
+
+
+
 class MatlabToPythonProjectConverter:
     def __init__(self, project_root: str):
         self._project_root = project_root
