@@ -339,10 +339,10 @@ class MPTreeConverter:
 
         for case in node.cases:
             test_list.append(
-                ast.BinOp(
+                ast.Compare(
                     left=self._convert_tree(node.expression),
-                    op=ast.Eq(),
-                    right=self._convert_tree(case.condition)
+                    ops=[ast.Eq()],
+                    comparators=[self._convert_tree(case.condition)]
                 )
             )
 

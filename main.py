@@ -18,9 +18,16 @@ if __name__ == "__main__":
     parser = Parser()
 
     matlab_code = r"""
-cbfcn = fmt.callback.(cbnames{I});
-fmt.n
+switch x +2
+				case 0
+					chl_mtx = gen_channel_matrix(eps_hat_q_trial, h_hat_q_trial, N);
+                    
+				case 0
+					chl_mtx = gen_channel_matrix(eps_hat_q_trial, h_hat_q_trial, N);
+                    end
     """
+    # with open(r"test_data\src\experiment\exp_one_Mc_ber_2.m", 'r') as f:
+    #     matlab_code = f.read()
     # matlab_ast = parser.parse(matlab_code)
     # rprint(matlab_ast)
     # python_ast = converter.convert(matlab_ast)
@@ -31,8 +38,6 @@ fmt.n
     for file_path in Path("test_data").rglob("*.m"):
         with open(file_path, 'r', encoding='utf-8') as f:
             matlab_code = f.read()
-    # with open("test_data/simple.m", 'r') as f:
-    #     matlab_code = f.read()
         print(f"{file_path}")
 
         try:
@@ -55,6 +60,13 @@ fmt.n
             print("5555")
             exit(0)
             
+        python_code = ast.unparse(python_ast)
+        # try:
+        #     python_code = ast.unparse(python_ast)
+        # except Exception as e:
+        #     print(e)
+        #     print("5555")
+        #     exit(0)
         # rprint(ast.unparse(python_ast))
 
         # rprint((matlab_ast))
