@@ -6,79 +6,71 @@ from functools import reduce
 import operator
 import ast
 
-from parse_matlab_code import Parser, Tree
-
-class SymbolType(Enum):
-    VAR = auto()
-    IF = auto()
-    TRY = auto()
-    LOOP = auto()
-    FUNC = auto()
-
-
-
-@dataclass
-class Symbol:
-    name: list[str]
-    typ: SymbolType
-
+from . import tree as Tree
 
 def get_dict_by_path(root, items):
     """Access a nested object in root by item sequence."""
     return reduce(operator.getitem, items, root)
 
-class SymbolTable:
+class FunctionTable:
     def __init__(self, cwd: Optional[str]=None) -> None:
         self._addpath_scope = {}
         self._cwd_scope = {}
         
-        self._mfile_scope = {}
-        self._mfile_scope_path = []
+        self._currfile_scope = {}
+        self._currfile_scope_path = []
 
-        if cwd is not None:
+        if cwd is not None and cwd.strip() != '':
             self._cwd = Path(cwd)
             for f in self._cwd.glob("*.m"):
                 self._cwd_scope[f.name] = f.absolute()
 
     def cd(self, cd_cmd: str) -> None:
-        self._cwd = self._cwd / Path(cd_cmd)
-        self._cwd_scope = {}
-        for f in self._cwd.glob("*.m"):
-            self._cwd_scope[f.name] = f.absolute()
+        if self._cwd is not None:
+            self._cwd = self._cwd / Path(cd_cmd)
+            self._cwd_scope = {}
+            for f in self._cwd.glob("*.m"):
+                self._cwd_scope[f.name] = f.absolute()
 
     def add_path(self, path: str) -> None:
-        for f in (self._cwd / Path(path)).rglob("*.m"):
-            self._func_file_scope[f.name] = f.absolute()
+        if self._cwd is not None:
+            for f in (self._cwd / Path(path)).rglob("*.m"):
+                self._cwd_scope[f.name] = f.absolute()
 
     def enter_scope(self, func_name: str) -> None:
-        target_dict = get_dict_by_path(self._mfile_scope, self._mfile_scope_path)
+        target_dict = get_dict_by_path(self._currfile_scope, self._currfile_scope_path)
         target_dict[func_name] = {}
-        self._mfile_scope_path.append(func_name)
+        self._currfile_scope_path.append(func_name)
 
     def exit_scope(self) -> None:
-        self._mfile_scope_path.pop()
+        self._currfile_scope_path.pop()
 
-    def add_symbol(self, target_node: ast.AST, value_node: ast.AST) -> None:
-        target_dict = get_dict_by_path(self._mfile_scope, self._mfile_scope_path)
-        target_dict[target_node] = value_node
+    def add_function(self, function_name: str) -> None:
+        target_dict = get_dict_by_path(self._currfile_scope, self._currfile_scope_path)
+        if function_name in target_dict:
+            pass
+        target_dict[function_name] = {}
 
-    def lookup(self, name: str) -> Optional[Symbol]:
-        for i in range(len(self._mfile_scope_path)):
-            scope_path = self._mfile_scope_path[:len(self._mfile_scope_path)-i]
-            target_dict = get_dict_by_path(self._mfile_scope, scope_path)
-            if name in target_dict:
-                return target_dict[name]
+    def lookup(self, fn_name: str) -> bool:
+        for i in range(len(self._currfile_scope_path)):
+            scope_path = self._currfile_scope_path[:len(self._mfile_scope_path)-i]
+            target_dict = get_dict_by_path(self._currfile_scope, scope_path)
+            if fn_name in target_dict:
+                return True
 
-        if name in self._mfile_scope_path:
-            return self._mfile_scope_path[name]
+        if fn_name in self._currfile_scope:
+            return True
+        
+        if fn_name in self._cwd_scope:
+            return True
 
-        return None
+        return False
 
 class SemanticError(Exception):
     pass
 
 def semantic_analysis(ast_root: Tree.Node) -> tuple[Tree.Node, list[str]]:
-    symbol_table = SymbolTable()
+    symbol_table = FunctionTable()
     error_msg = []
 
     def analyze_node(node: Tree.Node, context: str="global") -> Tree.Node:
@@ -86,25 +78,25 @@ def semantic_analysis(ast_root: Tree.Node) -> tuple[Tree.Node, list[str]]:
             if isinstance(node, Tree.Assignment):
                 for lnode in node.lvalue:
                     if isinstance(lnode, Tree.Identifier):
-                        symbol_table.add_symbol(lnode.value.val, Tree.Identifier)
+                        symbol_table.add_function(lnode.value.val, Tree.Identifier)
                     elif isinstance(lnode, Tree.FunctionCall):
-                        symbol_table.add_symbol(lnode.identifier.value.val, Tree.Identifier)
+                        symbol_table.add_function(lnode.identifier.value.val, Tree.Identifier)
                 node.rvalue = analyze_node(node.rvalue, context)
 
             elif isinstance(node, Tree.FunctionDefinition):
                 # if context != "global":
                 #     raise SemanticError(f"Nested function definitions are not allowed in MATLAB: {node.name.value.val}")
-                symbol_table.add_symbol(node.name.value.val, Tree.FunctionDefinition)
+                symbol_table.add_function(node.name.value.val, Tree.FunctionDefinition)
                 symbol_table.enter_scope()
                 for in_node in node.input_params:
-                    symbol_table.add_symbol(in_node.value.val, Tree.Identifier)
+                    symbol_table.add_function(in_node.value.val, Tree.Identifier)
                 for out_node in node.output_params:
-                    symbol_table.add_symbol(out_node.value.val, Tree.Identifier)
+                    symbol_table.add_function(out_node.value.val, Tree.Identifier)
                 node.body = [analyze_node(child, "function") for child in node.body]
                 symbol_table.exit_scope()
 
             elif isinstance(node, (Tree.ForLoop, Tree.ParforLoop)):
-                symbol_table.add_symbol(node.identifier.value.val, Tree.Identifier)
+                symbol_table.add_function(node.identifier.value.val, Tree.Identifier)
                 node.expression = analyze_node(node.expression, context)
                 symbol_table.enter_scope()
                 node.body = [analyze_node(child, "loop") for child in node.body]
@@ -133,11 +125,11 @@ def semantic_analysis(ast_root: Tree.Node) -> tuple[Tree.Node, list[str]]:
 
             elif isinstance(node, Tree.GlobalStatement):
                 for id_node in node.identifiers:
-                    symbol_table.add_symbol(id_node.value.val, Tree.Identifier)
+                    symbol_table.add_function(id_node.value.val, Tree.Identifier)
 
             elif isinstance(node, Tree.PersistentStatement):
                 for id_node in node.identifiers:
-                    symbol_table.add_symbol(id_node.value.val, Tree.Identifier)
+                    symbol_table.add_function(id_node.value.val, Tree.Identifier)
 
             elif isinstance(node, Tree.FunctionCall):
                 symbol = symbol_table.lookup(node.identifier.value.val)
@@ -164,7 +156,7 @@ def semantic_analysis(ast_root: Tree.Node) -> tuple[Tree.Node, list[str]]:
             elif isinstance(node, Tree.AnonymousFunction):
                 symbol_table.enter_scope()
                 for param in node.parameters:
-                    symbol_table.add_symbol(param.value.val, Tree.Identifier)
+                    symbol_table.add_function(param.value.val, Tree.Identifier)
                 node.body = analyze_node(node.body, "anonymous_function")
                 symbol_table.exit_scope()
 

@@ -31,49 +31,10 @@ class MatlabTypeConverter(ABC):
 
     # #################### Convert matlab's special functions ####################
     @abstractmethod
-    def convert_func(self, func: ast.AST, arguments: list[ast.AST]) -> ast.AST:
-        pass
-
-    @abstractmethod
     def arange(self, start: ast.AST, stop: list[ast.AST], step: list[ast.AST]) -> ast.AST:
         pass
+    
+    @abstractmethod
+    def convert_call(self, func: ast.AST, arguments: list[ast.AST]) -> ast.AST:
+        pass
 
-    @abstractmethod
-    def multiplication(self, left: ast.AST, right: list[ast.AST]) -> ast.AST:
-        pass
-
-    @abstractmethod
-    def right_division(self, left: ast.AST, right: list[ast.AST]) -> ast.AST:
-        pass
-    
-    @abstractmethod
-    def left_division(self, left: ast.AST, right: list[ast.AST]) -> ast.AST:
-        pass
-    
-    @abstractmethod
-    def matrix_multiplication(self, left: ast.AST, right: list[ast.AST]) -> ast.AST:
-        pass
-    
-    @abstractmethod
-    def matrix_right_division(self, left: ast.AST, right: list[ast.AST]) -> ast.AST:
-        pass
-    
-    @abstractmethod
-    def matrix_left_division(self, left: ast.AST, right: list[ast.AST]) -> ast.AST:
-        pass
-    
-    @abstractmethod
-    def power(self, left: ast.AST, right: list[ast.AST]) -> ast.AST:
-        pass
-    
-    @abstractmethod
-    def matrix_power(self, left: ast.AST, right: list[ast.AST]) -> ast.AST:
-        pass
-    
-    @abstractmethod
-    def transpose(self, left: ast.AST) -> ast.AST:
-        pass
-    
-    @abstractmethod
-    def hermitian(self, left: ast.AST) -> ast.AST:
-        pass

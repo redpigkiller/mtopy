@@ -4,36 +4,65 @@ from rich import print as rprint
 from pathlib import Path
 
 from parse_matlab_code import Parser, Tree, Error
-from mtopy.symbol_table import semantic_analysis
+from mtopy.core.function_table import semantic_analysis
 
 from mtopy.convert_utils.default_converter import DefaultConverter
-from mtopy.mtree_to_pytree import MPTreeConverter, MPTreeConversionConfig, MPTreeConversionError, NotImplementedConversionError
+from mtopy.mtree_to_pytree import MPTreeConverter, MPTreeConversionError, NotImplementedConversionError
+from mtopy.core.function_table import FunctionTable
+from mtopy.pytree_transformer import MPTreeTransformer
+# conversion_config = MPTreeConversionConfig(DefaultConverter)
 
-conversion_config = MPTreeConversionConfig(DefaultConverter)
+parser = Parser()
+cc = DefaultConverter()
+ff = FunctionTable("test_data/src")
+converter = MPTreeConverter(function_table=ff)
+tt = MPTreeTransformer(converter=cc, function_table=converter.get_function_table())
 
-converter = MPTreeConverter(conversion_config)
-
-# Main execution
 if __name__ == "__main__":
-    parser = Parser()
 
     matlab_code = r"""
-switch x +2
-				case 0
-					chl_mtx = gen_channel_matrix(eps_hat_q_trial, h_hat_q_trial, N);
-                    
-				case 0
-					chl_mtx = gen_channel_matrix(eps_hat_q_trial, h_hat_q_trial, N);
-                    end
+[]
+[2]
+[2 3]
+[2 3; 3]
+ {"32", "fh";3}
+2:4
+1:2:3
+1:2:3:4
+x(2, 3)
+x{2}
+x.(2)
     """
-    # with open(r"test_data\src\experiment\exp_one_Mc_ber_2.m", 'r') as f:
+
+
+    matlab_code = r"""
+ndim(x)
+reshape(x, 2, b, h)
+
+size(a, 8)
+function t1()
+end
+f.b = @(x) x
+function t122()
+end
+"""
+
+    # with open(r"test_data\src\tools\inputsdlg.m", 'r') as f:
     #     matlab_code = f.read()
-    # matlab_ast = parser.parse(matlab_code)
+
+    matlab_ast = parser.parse(matlab_code)
     # rprint(matlab_ast)
-    # python_ast = converter.convert(matlab_ast)
-    # print(ast.dump(python_ast, indent=4))
+
+    python_ast = converter.convert(matlab_ast)
+
+    # print(ast.dump(python_ast, include_attributes=False, indent=4))
     # print(ast.unparse(python_ast))
-    # exit(0)
+
+    python_ast = tt.visit(python_ast)
+    # print(ast.dump(python_ast, indent=4))
+    print(ast.unparse(python_ast))
+
+    exit(0)
 
     for file_path in Path("test_data").rglob("*.m"):
         with open(file_path, 'r', encoding='utf-8') as f:
