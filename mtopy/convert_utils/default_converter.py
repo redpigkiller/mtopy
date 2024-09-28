@@ -24,6 +24,9 @@ class DefaultConverter(MatlabTypeConverter):
         'not': ast.Invert(),
         }
     
+    def import_module(self) -> list[ast.AST]:
+        return [ast.Import(names=[ast.alias(name='numpy', asname='np')])]
+    
     def create_mat(self, elements: list[list[ast.AST]]) -> ast.AST:
         return ast.Call(
             func=ast.Attribute(value=ast.Name(id='np', ctx=ast.Load()), attr='array', ctx=ast.Load()),
@@ -38,18 +41,40 @@ class DefaultConverter(MatlabTypeConverter):
         return None
     
     def access_mat(self, identifier: ast.AST, arguments: list[ast.AST]) -> ast.AST:
-        if len(arguments) == 1:
-            arguments = arguments[0]
-        elif len(arguments) > 1:
-            arguments = ast.Tuple(elts=arguments)
-        return ast.Subscript(value=identifier, slice=arguments)
+        args = []
+        for arg in arguments:
+            args.append(
+                ast.BinOp(
+                    left=arg,
+                    op=ast.Sub(),
+                    right=ast.Constant(value=1)
+                )
+            )
+
+        if len(args) == 1:
+            args = args[0]
+        elif len(args) > 1:
+            args = ast.Tuple(elts=args)
+
+        return ast.Subscript(value=identifier, slice=args)
     
     def access_cell(self, identifier: ast.AST, arguments: list[ast.AST]) -> ast.AST:
-        if len(arguments) == 1:
-            arguments = arguments[0]
-        elif len(arguments) > 1:
-            arguments = ast.Tuple(elts=arguments)
-        return ast.Subscript(value=identifier, slice=arguments)
+        args = []
+        for arg in arguments:
+            args.append(
+                ast.BinOp(
+                    left=arg,
+                    op=ast.Sub(),
+                    right=ast.Constant(value=1)
+                )
+            )
+
+        if len(args) == 1:
+            args = args[0]
+        elif len(args) > 1:
+            args = ast.Tuple(elts=args)
+
+        return ast.Subscript(value=identifier, slice=args)
     
     def access_struct(self, identifier: ast.AST, arguments: list[ast.AST]) -> ast.AST:
         struct_element = identifier
@@ -232,3 +257,12 @@ class DefaultConverter(MatlabTypeConverter):
             args = [ast.Tuple(elts=args[1:], ctx=ast.Load())]
 
         return self._construct_attribute_call_ast(["np", "reshape"], [target, args])
+
+    def disp(self, args: list[ast.AST]) -> ast.AST:
+        return self._construct_attribute_call_ast(['print'], args)
+
+    def mat2str(self, args: list[ast.AST]) -> ast.AST:
+        return self._construct_attribute_call_ast(['np', 'array2string'], args)
+    
+    def num2str(self, args: list[ast.AST]) -> ast.AST:
+        return self._construct_attribute_call_ast(['str'], args)

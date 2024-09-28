@@ -53,7 +53,7 @@ class FunctionTable:
 
     def lookup(self, fn_name: str) -> bool:
         for i in range(len(self._currfile_scope_path)):
-            scope_path = self._currfile_scope_path[:len(self._mfile_scope_path)-i]
+            scope_path = self._currfile_scope_path[:len(self._currfile_scope_path)-i]
             target_dict = get_dict_by_path(self._currfile_scope, scope_path)
             if fn_name in target_dict:
                 return True
