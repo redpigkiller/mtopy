@@ -2,8 +2,8 @@
 import ast
 from typing import *
 
-from convert_utils.converter import MatlabTypeConverter
-from core.function_table import FunctionTable
+from ..convert_utils.converter import MatlabTypeConverter
+from .function_table import FunctionTable
 
 class MPTreeTransformer(ast.NodeTransformer):
     def __init__(self, converter: MatlabTypeConverter=None, function_table: FunctionTable=None) -> None:

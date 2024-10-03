@@ -108,7 +108,11 @@ class MPTreeConverter:
                 return None
             
             elif isinstance(node, Tree.Assignment):
-                targets = [self._convert_tree(lval, ast.Store()) for lval in node.lvalue]
+                if len(node.lvalue) > 1:
+                    targets = [ast.Tuple(elts=[self._convert_tree(lval, ast.Store()) for lval in node.lvalue], ctx=ast.Store())]
+                else:
+                    targets = [self._convert_tree(node.lvalue[0], ast.Store())]
+
                 rvalue = self._convert_tree(node.rvalue)
 
                 # Check for overwriting function variables

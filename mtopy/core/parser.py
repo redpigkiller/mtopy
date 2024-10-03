@@ -4,11 +4,11 @@ from typing import *
 from rich import print as rprint
 from lark import Lark
 
-from core.tokenizer import Token, TokenType, Tokenizer
-from core.tree import *
-from core.convert_lark_tree import convert_lark_tree
+from .tokenizer import Token, TokenType, Tokenizer
+from .tree import *
+from .convert_lark_tree import convert_lark_tree
 
-from core.parser_error import *
+from .parser_error import *
 
 
 class ASTBuilder:
