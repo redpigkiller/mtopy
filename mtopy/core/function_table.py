@@ -20,7 +20,7 @@ class FunctionTable:
         self._currfile_scope = {}
         self._currfile_scope_path = []
 
-        if cwd is not None and cwd.strip() != '':
+        if cwd is not None:
             self._cwd = Path(cwd)
             for f in self._cwd.glob("*.m"):
                 self._cwd_scope[f.name] = f.absolute()

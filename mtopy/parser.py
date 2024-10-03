@@ -4,11 +4,11 @@ from typing import *
 from rich import print as rprint
 from lark import Lark
 
-from .core.tokenizer import Token, TokenType, Tokenizer
-from .core.tree import *
-from .core.convert_lark_tree import convert_lark_tree
+from core.tokenizer import Token, TokenType, Tokenizer
+from core.tree import *
+from core.convert_lark_tree import convert_lark_tree
 
-from .core.parser_error import *
+from core.parser_error import *
 
 
 class ASTBuilder:
@@ -16,7 +16,7 @@ class ASTBuilder:
 
     def __init__(self) -> None:
         # Load grammar
-        file_path = pkg_resources.resource_filename('parse_matlab_code', 'grammar/matlab_ebnf.lark')
+        file_path = pkg_resources.resource_filename('mtopy', 'grammar/matlab_ebnf.lark')
         with open(file_path, 'r') as f:
             lark_grammar = f.read()
 

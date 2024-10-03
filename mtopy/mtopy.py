@@ -1,24 +1,27 @@
 import ast
-import os
 from pathlib import Path
 from typing import *
 
-from .parser import Parser
-from .core import parser_error as MParserError
-from .core.mtree_to_pytree import MPTreeConverter
-from .core import conversion_error as MConversionError
-from .core.function_table import FunctionTable
-from .core.pytree_transformer import MPTreeTransformer
+from parser import Parser
+from core import parser_error as MParserError
+from core.mtree_to_pytree import MPTreeConverter
+from core import conversion_error as MConversionError
+from core.function_table import FunctionTable
+from core.pytree_transformer import MPTreeTransformer
 
-from .convert_utils.default_converter import DefaultConverter
+from convert_utils.default_converter import DefaultConverter
 
 
 class MatlabToPythonConverter:
-    def __init__(self, project_root: str=""):
+    def __init__(self):
         self._parser = Parser()
-        self._f_table = FunctionTable(project_root)
-        self._mptree_converter = MPTreeConverter(function_table=self._f_table)
         self._converter = DefaultConverter()
+
+        self.reset()
+
+    def reset(self) -> None:
+        self._func_table = FunctionTable()
+        self._mptree_converter = MPTreeConverter(function_table=self._func_table)
 
     def convert_code(self, matlab_code: str) -> str:
         try:
@@ -49,15 +52,35 @@ class MatlabToPythonConverter:
         python_code = ast.unparse(python_ast)
 
         return python_code
-
-#     def convert_project(self, project_path: str) -> dict[str, str]:
-#         """
-#         Convert an entire MATLAB project to Python.
-#         """
-#         self._scan_project()
-#         converted_files = {}
-#         for file_path in file_pathes:
-#             converted_files[file_path] = self._convert_file(file_path)
-
-#         return converted_files
     
+    def convert_file(self, src_file_path: str, dest_file_path: str) -> None:
+        self._func_table = FunctionTable(Path(src_file_path).parent)
+        self._mptree_converter = MPTreeConverter(function_table=self._func_table)
+
+        with open(Path(src_file_path), 'r') as f:
+            matlab_code = f.read()
+
+        python_code = self.convert_code(matlab_code)
+
+        with open(Path(dest_file_path), 'w') as f:
+            f.write(python_code)
+
+    def convert_project(self, main_file_path: str, dest_folder: str) -> None:
+        project_file_list = list(Path(main_file_path).rglob("*.m"))
+        project_file_list.insert(0, project_file_list.index(Path(main_file_path)))
+
+        self._func_table = FunctionTable(main_file_path)
+        for matlab_file in project_file_list:
+            self._mptree_converter = MPTreeConverter(function_table=self._func_table)
+
+            with open(matlab_file, 'r') as f:
+                matlab_code = f.read()
+
+            python_code = self.convert_code(matlab_code)
+
+            self._func_table = self._mptree_converter.get_function_table()
+
+            out_dir = Path(dest_folder) / matlab_file.relative_to(Path(main_file_path).parent)
+            out_dir.mkdir(parents=True, exist_ok=True)
+            with open(out_dir, 'w') as f:
+                f.write(python_code)

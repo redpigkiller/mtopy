@@ -50,11 +50,11 @@ class Tokenizer:
     def __init__(self) -> None:
         yaml = YAML(typ='safe', pure=True)
 
-        file_path = pkg_resources.resource_filename('parse_matlab_code', 'grammar/matlab_keywords.yaml')
+        file_path = pkg_resources.resource_filename('mtopy', 'grammar/matlab_keywords.yaml')
         with open(file_path, 'r') as f:
             self.keywords = yaml.load(f)
 
-        file_path = pkg_resources.resource_filename('parse_matlab_code', 'grammar/matlab_operators.yaml')
+        file_path = pkg_resources.resource_filename('mtopy', 'grammar/matlab_operators.yaml')
         with open(file_path, 'r') as f:
             self.operators = yaml.load(f)
 

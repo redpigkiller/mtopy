@@ -21,7 +21,7 @@ class DefaultConverter(MatlabTypeConverter):
         'minus': ast.Sub(),
         'uplus': ast.UAdd(),
         'uminus': ast.USub(),
-        'not': ast.Invert(),
+        'not': ast.Not(),
         }
     
     def import_module(self) -> list[ast.AST]:
@@ -114,6 +114,12 @@ class DefaultConverter(MatlabTypeConverter):
                     comparators=node.args[1:]
                 )
 
+            elif isinstance(op, (ast.UAdd, ast.USub, ast.Not)):
+                return ast.UnaryOp(
+                    op=op,
+                    operand=node.args[0]
+                )
+            
             else:
                 return ast.BinOp(
                     left=node.args[0],
