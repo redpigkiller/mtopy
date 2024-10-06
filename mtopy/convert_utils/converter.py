@@ -35,6 +35,10 @@ class MatlabTypeConverter(ABC):
         pass
     
     @abstractmethod
-    def convert_call(self, func: ast.AST, arguments: list[ast.AST]) -> ast.AST:
+    def convert_op(self, node: ast.AST) -> ast.AST:
+        pass
+    
+    @abstractmethod
+    def convert_call(self, node: ast.AST) -> ast.AST|str:
         pass
 

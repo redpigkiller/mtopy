@@ -2,10 +2,18 @@ from abc import ABC, ABCMeta, abstractmethod
 import ast
 from typing import *
 
-from .converter import MatlabTypeConverter
+from ..converter import MatlabTypeConverter
+from .matlab_fundamentals import MatlabFundamentals
 
 
-class DefaultConverter(MatlabTypeConverter):
+class IndexTransformer(ast.NodeTransformer):
+    def visit_Name(self, node):
+        if node.id == "end":
+            return ast.Constant(value=0)
+        else:
+            return node
+
+class DefaultConverter(MatlabTypeConverter, MatlabFundamentals):
     _op_map = {
         'or': ast.Or(),
         'and': ast.And(),
@@ -24,7 +32,12 @@ class DefaultConverter(MatlabTypeConverter):
         'not': ast.Not(),
         }
     
+    def __init__(self) -> None:
+        super().__init__()
+        self._index_transformer = IndexTransformer()
+    
     def import_module(self) -> list[ast.AST]:
+        
         return [ast.Import(names=[ast.alias(name='numpy', asname='np')])]
     
     def create_mat(self, elements: list[list[ast.AST]]) -> ast.AST:
@@ -40,16 +53,26 @@ class DefaultConverter(MatlabTypeConverter):
     def create_struct(self, elements: list[list[ast.AST]]) -> ast.AST:
         return None
     
-    def access_mat(self, identifier: ast.AST, arguments: list[ast.AST]) -> ast.AST:
+    def _index_mapping(self, indexes: list[ast.AST]) -> list[ast.AST]:
         args = []
-        for arg in arguments:
-            args.append(
-                ast.BinOp(
-                    left=arg,
+        for index in indexes:
+            # Change 'end' to 0
+            index = self._index_transformer.visit(index)
+
+            # Get the index
+            if not isinstance(index, ast.Slice):
+                index = ast.BinOp(
+                    left=index,
                     op=ast.Sub(),
                     right=ast.Constant(value=1)
                 )
-            )
+                
+            args.append(index)
+        
+        return args
+
+    def access_mat(self, identifier: ast.AST, arguments: list[ast.AST]) -> ast.AST:
+        args = self._index_mapping(arguments)
 
         if len(args) == 1:
             args = args[0]
@@ -59,15 +82,7 @@ class DefaultConverter(MatlabTypeConverter):
         return ast.Subscript(value=identifier, slice=args)
     
     def access_cell(self, identifier: ast.AST, arguments: list[ast.AST]) -> ast.AST:
-        args = []
-        for arg in arguments:
-            args.append(
-                ast.BinOp(
-                    left=arg,
-                    op=ast.Sub(),
-                    right=ast.Constant(value=1)
-                )
-            )
+        args = self._index_mapping(arguments)
 
         if len(args) == 1:
             args = args[0]
@@ -98,7 +113,7 @@ class DefaultConverter(MatlabTypeConverter):
             keywords=[]
         )
     
-    def convert_call(self, node: ast.AST) -> Optional[ast.AST]:
+    def convert_op(self, node: ast.AST) -> ast.AST:
         op = self._op_map.get(node.func.id, None)
         if op is not None:
             if isinstance(op, (ast.And, ast.Or)):
@@ -129,46 +144,49 @@ class DefaultConverter(MatlabTypeConverter):
         
         match node.func.id:
             case "times":
-                return self.multiplication(node.args[0], node.args[1])
+                return self._multiplication(node.args[0], node.args[1])
             case "rdivide":
-                return self.division(node.args[0], node.args[1])
+                return self._division(node.args[0], node.args[1])
             case "ldivide":
-                return self.division(node.args[1], node.args[0])
+                return self._division(node.args[1], node.args[0])
             case "mtimes":
-                return self.matrix_multiplication(node.args[0], node.args[1])
+                return self._matrix_multiplication(node.args[0], node.args[1])
             case "mrdivide":
-                return self.least_square(self.transpose(node.args[0]), self.transpose(node.args[1]))
+                return self._least_square(self._transpose(node.args[0]), self._transpose(node.args[1]))
             case "mldivide":
-                return self.least_square(node.args[0], node.args[1])
+                return self._least_square(node.args[0], node.args[1])
             case "power":
-                return self.power(node.args[0], node.args[1])
+                return self._power(node.args[0], node.args[1])
             case "mpower":
-                return self.matrix_power(node.args[0], node.args[1])
+                return self._matrix_power(node.args[0], node.args[1])
             case "transpose":
-                return self.transpose(node.args[0])
+                return self._transpose(node.args[0])
             case "ctranspose":
-                return self.hermitian(node.args[0])
+                return self._hermitian(node.args[0])
             
+        return node
+    
+    def convert_call(self, node: ast.AST) -> ast.AST|str:
         # Convert the built-in functions
         convert_func = getattr(self, node.func.id, None)
         if convert_func:
             return convert_func(node.args)
 
-        return None
+        return f"Undefined function {node.func.id}"
     
     # ################################################################################
     # Basic operations
     # ################################################################################
-    def multiplication(self, left: ast.AST, right: ast.AST) -> ast.AST:
+    def _multiplication(self, left: ast.AST, right: ast.AST) -> ast.AST:
         return ast.BinOp(left=left, op=ast.Mult(), right=right)
 
-    def division(self, left: ast.AST, right: ast.AST) -> ast.AST:
+    def _division(self, left: ast.AST, right: ast.AST) -> ast.AST:
         return ast.BinOp(left=left, op=ast.Div(), right=right)
     
-    def matrix_multiplication(self, left: ast.AST, right: ast.AST) -> ast.AST:
+    def _matrix_multiplication(self, left: ast.AST, right: ast.AST) -> ast.AST:
         return ast.BinOp(left=left, op=ast.MatMult(), right=right)
     
-    def least_square(self, left: ast.AST, right: ast.AST) -> ast.AST:
+    def _least_square(self, left: ast.AST, right: ast.AST) -> ast.AST:
         return ast.Call(
             func=ast.Attribute(
                 value=ast.Attribute(
@@ -183,10 +201,10 @@ class DefaultConverter(MatlabTypeConverter):
             keywords=[]
         )
     
-    def power(self, left: ast.AST, right: ast.AST) -> ast.AST:
+    def _power(self, left: ast.AST, right: ast.AST) -> ast.AST:
         return ast.BinOp(left=left, op=ast.Pow(), right=right)
     
-    def matrix_power(self, left: ast.AST, right: ast.AST) -> ast.AST:
+    def _matrix_power(self, left: ast.AST, right: ast.AST) -> ast.AST:
         return ast.Call(
             func=ast.Attribute(
                 value=ast.Attribute(
@@ -201,10 +219,10 @@ class DefaultConverter(MatlabTypeConverter):
             keywords=[]
         )
     
-    def transpose(self, left: ast.AST) -> ast.AST:
+    def _transpose(self, left: ast.AST) -> ast.AST:
         return ast.Attribute(value=left, attr='T', ctx=ast.Load())
     
-    def hermitian(self, left: ast.AST) -> ast.AST:
+    def _hermitian(self, left: ast.AST) -> ast.AST:
         return ast.Attribute(
             value=ast.Call(
                 func=ast.Attribute(
@@ -232,43 +250,6 @@ class DefaultConverter(MatlabTypeConverter):
             node = ast.Attribute(value=node, attr=attr, ctx=ast.Load())
         
         return ast.Call(func=node, args=args, keywords=[])
-
-    def zeros(self, args: list[ast.AST]) -> ast.AST:
-        args = [ast.Tuple(elts=args, ctx=ast.Load())]
-        return self._construct_attribute_call_ast(["np", "zeros"], args)
     
-    def ones(self, args: list[ast.AST]) -> ast.AST:
-        args = [ast.Tuple(elts=args, ctx=ast.Load())]
-        return self._construct_attribute_call_ast(["np", "ones"], args)
-    
-    def ndims(self, args: list[ast.AST]) -> ast.AST:
-        assert len(args) == 1
-        return self._construct_attribute_call_ast(["np", "ndim"], args)
-    
-    def size(self, args: list[ast.AST]) -> ast.AST:
-        if len(args) == 1:
-            return self._construct_attribute_call_ast(["np", "shape"], args)
-        else:
-            return self._construct_attribute_call_ast(["np", "size"], args)
-        
-    def reshape(self, args: list[ast.AST]) -> ast.AST:
-        target = args[0]
-        if len(args) == 2:
-            args = args[1]
-            assert isinstance(args, (ast.List, ast.Name,))
-            if isinstance(args, ast.List):
-                assert len(args.elts) == 1
-                args = ast.Tuple(elts=args.elts[0].elts, ctx=ast.Load())
-        else:
-            args = [ast.Tuple(elts=args[1:], ctx=ast.Load())]
-
-        return self._construct_attribute_call_ast(["np", "reshape"], [target, args])
-
-    def disp(self, args: list[ast.AST]) -> ast.AST:
-        return self._construct_attribute_call_ast(['print'], args)
-
-    def mat2str(self, args: list[ast.AST]) -> ast.AST:
-        return self._construct_attribute_call_ast(['np', 'array2string'], args)
-    
-    def num2str(self, args: list[ast.AST]) -> ast.AST:
-        return self._construct_attribute_call_ast(['str'], args)
+    def struct(self, args: list[ast.AST]) -> ast.AST:
+        return ast.Dict(keys=[], values=[])

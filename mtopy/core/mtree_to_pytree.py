@@ -2,28 +2,12 @@ import ast
 from typing import *
 
 from . import tree as Tree
-from .function_table import FunctionTable
+from .symbol_table import SymbolTable, SymbolType
 
 from .conversion_error import *
 
 
 class MPTreeConverter:
-    # Creat matlab datatype
-    #  Data type            |   matlab code  |   transformed code   |       Note
-    # matlab array          |   [2 3; 4, 5]  |   [[2, 3], [4, 5]]   |  two dim list
-    # matlab cell array     |   {2 3; 4, 5}  |  [[[2, 3], [4, 5]]]  | three dim list
-    # matlab structure      |        -       |          -           | use struct to initialize
-    # matlab colon array    |    2 : 1 : 10  |     [2, 10, 1]       |  one dim list
-
-    # Access matlab datatype
-    #  Data type            |  matlab code   |   transformed code   |      Note
-    # matlab array          |   a(2, 3)      |     ((a, 2, 3))      |  two dim tuple
-    # matlab cell array     |   c{4, 5}      |    (((c, 4, 5)))     | three dim tuple
-    # matlab structure      |    s.e         |       (s, 'e')       |  one dim tuple
-
-    # Special matlab keywords
-    _matlab_persistent = "m_persistent"
-
     # Matlab operation
     _matlab_op_map = {
         'short_circuit_or': "or",
@@ -54,18 +38,21 @@ class MPTreeConverter:
         "hermitian": "ctranspose",
     }
 
-    def __init__(self, function_table: FunctionTable=None) -> None:
+    def __init__(self, symbol_table: SymbolTable=None) -> None:
         # TODO
         # 1. lineno
         # 2. change converter to use m_invert...
         # 3. process python's ast to convert m_invert to ~
-        self._function_table = function_table if function_table is not None else FunctionTable()
+        self._symbol_table = symbol_table if symbol_table is not None else SymbolTable()
 
-    def get_function_table(self) -> FunctionTable:
-        return self._function_table
+    def get_symbol_table(self) -> SymbolTable:
+        return self._symbol_table
 
     def convert(self, node: Tree.Node) -> Optional[ast.AST]:
         if isinstance(node, Tree.Program):
+            self._flag_in_lhs = False
+            self._flag_in_rhs = False
+            
             return ast.Module(
                 body=self._body_list_to_ast(node.body),
                 type_ignores=[]
@@ -108,23 +95,51 @@ class MPTreeConverter:
                 return None
             
             elif isinstance(node, Tree.Assignment):
+                # Converting left value
+                self._flag_in_lhs = True
                 if len(node.lvalue) > 1:
                     targets = [ast.Tuple(elts=[self._convert_tree(lval, ast.Store()) for lval in node.lvalue], ctx=ast.Store())]
                 else:
                     targets = [self._convert_tree(node.lvalue[0], ast.Store())]
+                self._flag_in_lhs = False
 
+                # Converting right value
+                self._flag_in_rhs = True
                 rvalue = self._convert_tree(node.rvalue)
+                self._flag_in_rhs = False
 
-                # Check for overwriting function variables
-                for target in targets:
-                    if self._function_table.lookup(ast.unparse(target)):
-                        raise BadConversionError("Please do not assign")
-
-                # For AnonymousFunction
+                # Process for symbol table
+                # A. For anonymousFunction
                 if isinstance(rvalue, ast.Lambda):
                     assert len(targets) == 1
-                    self._function_table.add_function(ast.unparse(targets[0]))
-                    
+                    self._symbol_table.add_symbol(ast.unparse(targets[0]), SymbolType.FUNC)
+                elif isinstance(rvalue, ast.Name) and getattr(rvalue, '_custom_flag', 'None') == "matlab_function_handle":
+                    assert len(targets) == 1
+                    self._symbol_table.add_symbol(ast.unparse(targets[0]), SymbolType.FUNC)
+
+                # B. Determine targets:
+                else:
+                    for target in targets:
+                        # 1. x
+                        if isinstance(target, ast.Name):
+                            self._symbol_table.add_symbol(ast.unparse(target), SymbolType.VAR)
+
+                        # 2. x{1}
+                        elif isinstance(target, ast.Call) and getattr(target, '_custom_flag', 'None') == "matlab_cell_access":
+                            self._symbol_table.add_symbol(ast.unparse(target.args[0]), SymbolType.VAR)
+
+                        # 3. x.b
+                        elif isinstance(target, ast.Call) and getattr(target, '_custom_flag', 'None') == "matlab_struct_access":
+                            self._symbol_table.add_symbol(ast.unparse(target.args[0]), SymbolType.VAR)
+
+                        # 4-1. x(1)
+                        elif isinstance(target, ast.Call) and getattr(target, '_custom_flag', 'None') == "matlab_array_access":
+                            self._symbol_table.add_symbol(ast.unparse(target.args[0]), SymbolType.VAR)
+
+                        # 4-2. x(1)
+                        elif isinstance(target, ast.Call) and isinstance(target.func, ast.Name):
+                            self._symbol_table.add_symbol(ast.unparse(target.func), SymbolType.VAR)
+                
                 lineno = 1
                 # lineno = node.lvalue[-1].value.ln + 1
                 return ast.Assign(
@@ -134,27 +149,59 @@ class MPTreeConverter:
                 )
             
             elif isinstance(node, Tree.MatrixExpression):
-                return ast.List(elts=[ast.List(elts=[self._convert_tree(elem) for elem in row], ctx=ast.Load()) for row in node.elements], ctx=ast.Load())
+                return ast.Call(
+                    func=ast.Name(id='matlab_array', ctx=ast.Load()),
+                    args=[
+                        ast.List(
+                            elts=[ast.List(elts=[self._convert_tree(elem) for elem in row], ctx=ast.Load()) for row in node.elements],
+                            ctx=ast.Load()
+                        )
+                    ],
+                    keywords=[],
+                    _custom_flag='matlab_array'
+                )
             
             elif isinstance(node, Tree.CellArrayExpression):
-                return  ast.List(
-                    elts=[ast.List(elts=[ast.List(elts=[self._convert_tree(elem) for elem in row], ctx=ast.Load()) for row in node.elements], ctx=ast.Load())],
-                    ctx=ast.Load()
+                return ast.Call(
+                    func=ast.Name(id='matlab_cell', ctx=ast.Load()),
+                    args=[
+                        ast.List(
+                            elts=[ast.List(elts=[self._convert_tree(elem) for elem in row], ctx=ast.Load()) for row in node.elements],
+                            ctx=ast.Load()
+                        )
+                    ],
+                    keywords=[],
+                    _custom_flag='matlab_cell'
                 )
             
             elif isinstance(node, Tree.ColonArray):
                 if node.step:
-                    return ast.List(elts=[self._convert_tree(node.start), self._convert_tree(node.stop), self._convert_tree(node.step)], ctx=ast.Load())
+                    func_arg = ast.List(elts=[self._convert_tree(node.start), self._convert_tree(node.stop), self._convert_tree(node.step)], ctx=ast.Load())
                 else:
-                    return ast.List(elts=[self._convert_tree(node.start), self._convert_tree(node.stop)], ctx=ast.Load())
+                    func_arg = ast.List(elts=[self._convert_tree(node.start), self._convert_tree(node.stop)], ctx=ast.Load())
+                
+                return ast.Call(
+                    func=ast.Name(id='matlab_arange', ctx=ast.Load()),
+                    args=[func_arg],
+                    keywords=[],
+                    _custom_flag='matlab_arange'
+                )
             
             elif isinstance(node, Tree.ArrayAccess):
-                return ast.Tuple(elts=[ast.Tuple(elts=[self._convert_tree(node.identifier)] + [self._convert_tree(index) for index in node.arguments.indices], ctx=ast.Load())], ctx=ast.Load())
+                return self._array_access(node)
             
             elif isinstance(node, Tree.CellArrayAccess):
-                return ast.Tuple(
-                    elts=[ast.Tuple(elts=[ast.Tuple(elts=[self._convert_tree(node.identifier)] + [self._convert_tree(index) for index in node.arguments.indices], ctx=ast.Load())], ctx=ast.Load())],
-                    ctx=ast.Load()
+                return ast.Call(
+                    func=ast.Name(id='matlab_cell_access', ctx=ast.Load()),
+                    args=[
+                        self._convert_tree(node.identifier),
+                        ast.List(
+                            elts=[self._convert_tree(index) for index in node.arguments.indices],
+                            ctx=ast.Load()
+                        )
+                    ],
+                    keywords=[],
+                    _custom_flag='matlab_cell_access'
                 )
             
             elif isinstance(node, Tree.StructAccess):
@@ -166,14 +213,25 @@ class MPTreeConverter:
                     elif isinstance(arg, ast.Constant):
                         arg = ast.Constant(value=str(arg.value))
                     args.append(arg)
-
-                return ast.Tuple(elts=[self._convert_tree(node.identifier)] + args, ctx=ast.Load())
+                    
+                return ast.Call(
+                    func=ast.Name(id='matlab_struct_access', ctx=ast.Load()),
+                    args=[
+                        self._convert_tree(node.identifier),
+                        ast.List(
+                            elts=args,
+                            ctx=ast.Load()
+                        )
+                    ],
+                    keywords=[],
+                    _custom_flag='matlab_struct_access'
+                )
             
             elif isinstance(node, Tree.FunctionDefinition):
                 fn_name = node.name.value.val
 
-                self._function_table.add_function(fn_name)
-                self._function_table.enter_scope(fn_name)
+                self._symbol_table.add_symbol(fn_name, SymbolType.FUNC)
+                self._symbol_table.enter_scope(fn_name)
 
                 input_args = [ast.arg(arg=self._convert_tree(param).id) for param in node.input_params]
                 func_body = self._body_list_to_ast(node.body)
@@ -183,7 +241,7 @@ class MPTreeConverter:
                 elif len(ret_var) > 1:
                     func_body.append(ast.Return(value=ast.Tuple(elts=ret_var)))
                     
-                self._function_table.exit_scope()
+                self._symbol_table.exit_scope()
                 
                 return ast.FunctionDef(
                     name=fn_name,
@@ -212,7 +270,7 @@ class MPTreeConverter:
                 )
             
             elif isinstance(node, Tree.FunctionHandle):
-                return ast.Name(id=node.value, ctx=ast.Load())
+                return ast.Name(id=node.value, ctx=ast.Load(), _custom_flag='matlab_function_handle')
             
             elif isinstance(node, Tree.IfStatement):
                 return ast.If(
@@ -267,14 +325,9 @@ class MPTreeConverter:
             elif isinstance(node, Tree.PersistentStatement):
                 persistent_var = []
                 for identifier in node.identifiers:
-                    assert isinstance(identifier, Tree.Identifier), "Invalid persistent variable"
-                    persistent_var.append(self._convert_tree(identifier))
-
-                return ast.Call(
-                    func=ast.Name(id=self._matlab_persistent, ctx=ast.Load()),
-                    args=persistent_var,
-                    keywords=[]
-                )
+                    assert isinstance(identifier, Tree.Identifier), "Invalid global variable"
+                    persistent_var.append(identifier.value.val)
+                return ast.Global(names=persistent_var, _custom_flag='matlab_presistent')
             
             elif isinstance(node, Tree.BreakStatement):
                 return ast.Break()
@@ -283,15 +336,25 @@ class MPTreeConverter:
                 return ast.Continue()
             
             elif isinstance(node, Tree.ReturnStatement):
-                return ast.Return(value=None)
+                return ast.Call(func=ast.Name(id='matlab_return', ctx=ast.Load()), args=[], keywords=[], _custom_flag='matlab_return')
             
             elif isinstance(node, Tree.FunctionCall):
+                if self._flag_in_lhs:
+                    return self._array_access(node)
+
                 func_name = self._convert_tree(node.identifier)
+
+                # Check symbol table
+                if isinstance(func_name, ast.Name):
+                    if self._symbol_table.lookup(func_name.id) is SymbolType.VAR:
+                        return self._array_access(node)
+
                 if node.arguments is not None:
                     arguments = [self._convert_tree(arg) for arg in node.arguments.indices if arg is not None]
                 else:
                     arguments = []
 
+                # Check default path relative command in Matlab
                 if isinstance(func_name, ast.Name):
                     self._check_dir_change(func_name, arguments)
                 
@@ -306,49 +369,19 @@ class MPTreeConverter:
                 return ast.Call(
                     func=ast.Name(id=op, ctx=ast.Load()),
                     args=[self._convert_tree(node.left), self._convert_tree(node.right)],
-                    keywords=[]
+                    keywords=[],
+                    _custom_flag='matlab_op'
                 )
                 
-                # if op is not None:
-                #     if isinstance(op, (ast.And, ast.Or,)):
-                #         return ast.BoolOp(
-                #             op=op,
-                #             values=[self._convert_tree(node.left), self._convert_tree(node.right)]
-                #         )
-                    
-                #     elif isinstance(op, (ast.Lt, ast.LtE, ast.Gt, ast.GtE, ast.Eq, ast.NotEq)):
-                #         return ast.Compare(
-                #             left=self._convert_tree(node.left),
-                #             ops=[op],
-                #             comparators=[self._convert_tree(node.right)]
-                #         )
-
-                #     else:
-                #         return ast.BinOp(
-                #             left=self._convert_tree(node.left),
-                #             op=op,
-                #             right=self._convert_tree(node.right)
-                #         )
-                # else:
-                #     convert_func = getattr(self.config.converter, node.operator)
-                #     return convert_func(self._convert_tree(node.left), self._convert_tree(node.right))
-            
             elif isinstance(node, Tree.UnaryOperation):
                 op = self._matlab_op_map.get(node.operator, None)
                 return ast.Call(
                     func=ast.Name(id=op, ctx=ast.Load()),
                     args=[self._convert_tree(node.operand)],
-                    keywords=[]
+                    keywords=[],
+                    _custom_flag='matlab_op'
                 )
-                # if op is not None:
-                #     return ast.UnaryOp(
-                #         op=op,
-                #         operand=self._convert_tree(node.operand)
-                #     )
-                # else:
-                #     convert_func = getattr(self.config.converter, node.operator)
-                #     return convert_func(self._convert_tree(node.operand))
-            
+                
             raise NotImplementedError(f"Conversion not implemented for node type: {type(node)}")
             
         except NotImplementedConversionError as e:
@@ -425,10 +458,24 @@ class MPTreeConverter:
 
         return if_ast
 
+    def _array_access(self, node: Tree.Node) -> ast.AST:
+        return ast.Call(
+            func=ast.Name(id='matlab_array_access', ctx=ast.Load()),
+            args=[
+                self._convert_tree(node.identifier),
+                ast.List(
+                    elts=[self._convert_tree(index) for index in node.arguments.indices],
+                    ctx=ast.Load()
+                )
+            ],
+            keywords=[],
+            _custom_flag='matlab_array_access'
+        )
+    
     def _check_dir_change(self, func_name: ast.AST, args):
         match func_name.id.lower():
             case "cd":
-                self._function_table.cd(ast.unparse(args))
+                self._symbol_table.cd(ast.unparse(args))
             case "copyfile":
                 pass
             case "delete":
@@ -440,4 +487,10 @@ class MPTreeConverter:
             case "movefile":
                 pass
             case "rmdir":
+                pass
+            case "addpath":
+                self._symbol_table.add_path(ast.unparse(args))
+            case "rmpath":
+                pass
+            case "genpath":
                 pass

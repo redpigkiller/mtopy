@@ -72,7 +72,7 @@ class Tokenizer:
 
         tokens = []
         lines = code.split('\n')
-
+        
         # Line and column number
         self._line_num = 1
         self._column_num = 1
@@ -84,6 +84,7 @@ class Tokenizer:
                 self._column_num = 1
                 while self._column_num <= len(line):
                     token, length = self._get_next_token(line[self._column_num-1:])
+                    
                     if token:
                         if token.typ == TokenType.IDENTIFIER or \
                             token.typ == TokenType.PARENTHESIS_CLOSE or \
@@ -116,7 +117,6 @@ class Tokenizer:
         return tokens
 
     def _get_next_token(self, string: str) -> tuple[Optional[Token], int]:
-        
         if self._flag_in_multi_line_comment:
             if string.lstrip().startswith('%}'):
                 num_spaces = len(string) - len(string.lstrip())
@@ -244,7 +244,15 @@ class Tokenizer:
         full_string = string[:i+1]
 
         if full_string[0] == "'":
-            full_string = f"\"{full_string[1:-1]}\""
+            is_char_array = True
+        else:
+            is_char_array = False
+
+        inner_string = full_string[1:-1]
+        inner_string = inner_string.replace('"', '""')
+        full_string = f'"{inner_string}"'
+
+        if is_char_array:
             return Token(TokenType.CHAR_ARRAY, full_string, line, column), i + 1
         else:
             return Token(TokenType.STRING, full_string, line, column), i + 1

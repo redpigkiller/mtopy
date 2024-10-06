@@ -7,9 +7,9 @@ from .core.mtree_to_pytree import MPTreeConverter
 from .core.pytree_transformer import MPTreeTransformer
 from .core import parser_error as ParserError
 from .core import conversion_error as ConversionError
-from .core.function_table import FunctionTable
+from .core.symbol_table import SymbolTable
 
-from .convert_utils.default_converter import DefaultConverter
+from .convert_utils.default_converter.default_converter import DefaultConverter
 
 
 class MatlabToPythonConverter:
@@ -20,8 +20,8 @@ class MatlabToPythonConverter:
         self.reset()
 
     def reset(self) -> None:
-        self._func_table = FunctionTable()
-        self._mptree_converter = MPTreeConverter(function_table=self._func_table)
+        self._func_table = SymbolTable()
+        self._mptree_converter = MPTreeConverter(symbol_table=self._func_table)
 
     def convert_code(self, matlab_code: str) -> str:
         try:
@@ -44,7 +44,7 @@ class MatlabToPythonConverter:
 
         transformer = MPTreeTransformer(
             converter=self._converter,
-            function_table=self._mptree_converter.get_function_table()
+            function_table=self._mptree_converter.get_symbol_table()
         )
 
         python_ast = transformer.visit(python_ast)
@@ -54,8 +54,8 @@ class MatlabToPythonConverter:
         return python_code
     
     def convert_file(self, src_file_path: str, dest_file_path: str) -> None:
-        self._func_table = FunctionTable(Path(src_file_path).parent)
-        self._mptree_converter = MPTreeConverter(function_table=self._func_table)
+        self._func_table = SymbolTable(Path(src_file_path).parent)
+        self._mptree_converter = MPTreeConverter(symbol_table=self._func_table)
 
         with open(Path(src_file_path), 'r') as f:
             matlab_code = f.read()
@@ -69,16 +69,17 @@ class MatlabToPythonConverter:
         project_file_list = list(Path(main_file_path).parent.rglob("*.m"))
         project_file_list.insert(0, project_file_list.pop(project_file_list.index(Path(main_file_path))))
 
-        self._func_table = FunctionTable(main_file_path)
+        self._func_table = SymbolTable(main_file_path)
         for matlab_file in project_file_list:
-            self._mptree_converter = MPTreeConverter(function_table=self._func_table)
+            print(f"Start converting {matlab_file}")
+            self._mptree_converter = MPTreeConverter(symbol_table=self._func_table)
 
             with open(matlab_file, 'r', encoding='utf-8') as f:
                 matlab_code = f.read()
 
             python_code = self.convert_code(matlab_code)
 
-            self._func_table = self._mptree_converter.get_function_table()
+            self._func_table = self._mptree_converter.get_symbol_table()
 
             if python_code is None:
                 print(f"Conversion failed for {matlab_file}")

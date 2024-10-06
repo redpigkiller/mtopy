@@ -3,11 +3,11 @@ from mtopy.core.parser import Parser
 from mtopy.core.mtree_to_pytree import MPTreeConverter
 from mtopy.core import conversion_error as ConversionError
 from mtopy.core.pytree_transformer import MPTreeTransformer
-from mtopy.core.function_table import FunctionTable
+from mtopy.core.symbol_table import SymbolTable
 from mtopy.core import tree as MTree
 from mtopy.core import parser_error as ParserError
 from mtopy.mtopy import MatlabToPythonConverter
 
-__all__ = ['MatlabToPythonConverter', 'Tokenizer', 'Parser', 'MPTreeConverter', 'MPTreeTransformer', 'FunctionTable',
+__all__ = ['MatlabToPythonConverter', 'Tokenizer', 'Parser', 'MPTreeConverter', 'MPTreeTransformer', 'SymbolTable',
            'Token', 'TokenType', 'MTree',
            'ParserError', 'ConversionError', 'MatlabToPythonConverter']
