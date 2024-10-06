@@ -472,7 +472,7 @@ class MPTreeConverter:
             _custom_flag='matlab_array_access'
         )
     
-    def _check_dir_change(self, func_name: ast.AST, args):
+    def _check_dir_change(self, func_name: ast.AST, args: list[ast.AST]) -> None:
         match func_name.id.lower():
             case "cd":
                 self._symbol_table.cd(ast.unparse(args))
@@ -489,7 +489,27 @@ class MPTreeConverter:
             case "rmdir":
                 pass
             case "addpath":
-                self._symbol_table.add_path(ast.unparse(args))
+                # Parse the arguments of the addpath
+                path = []
+                for arg in args:
+                    if isinstance(arg, ast.Constant):
+                        assert isinstance(arg.value, str)
+                        if arg.value == "-frozen":
+                            pass
+                        elif arg.value == "-begin":
+                            pass
+                        elif arg.value == "-end":
+                            pass
+                        else:
+                            path.append(arg.value)
+                    elif isinstance(arg, ast.Call):
+                        assert isinstance(arg.func, ast.Name) and arg.func.id == 'genpath', "Unsupport addpath with another function call"
+                        assert len(arg.args) <= 1
+                        if len(arg.args) == 1:
+                            assert isinstance(arg.args[0], ast.Constant) and isinstance(arg.args[0].value, str)
+                            path.append(arg.args[0].value)
+                
+                self._symbol_table.add_path(path)
             case "rmpath":
                 pass
             case "genpath":

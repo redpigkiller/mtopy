@@ -33,9 +33,9 @@ class SymbolTable:
         self._currfile_scope_index = []
 
         if cwd is not None:
-            self._cwd = Path(cwd)
+            self._cwd = Path(cwd).resolve()
             for f in self._cwd.glob("*.m"):
-                self._dir_scope[f.stem] = f.absolute()
+                self._dir_scope[f.stem] = f.resolve()
         else:
             self._cwd = None
 
@@ -44,27 +44,41 @@ class SymbolTable:
             self._cwd = self._cwd / Path(cd_cmd)
             self._dir_scope = {}
             for f in self._cwd.glob("*.m"):
-                self._dir_scope[f.stem] = f.absolute()
+                self._dir_scope[f.stem] = f.resolve()
 
-    def add_path(self, path: str|list[str]) -> None:
-        if isinstance(path, str):
-            path = [path]
-
+    def add_path(self, pathes: str|list[str]) -> None:
+        if isinstance(pathes, str):
+            pathes = [pathes]
+        
+        new_pathes = []
         if self._cwd is not None:
-            for p in path:
+            for p in pathes:
+                # 1. Try cwd/path
                 new_path = self._cwd / Path(p)
-                if not new_path.exists():
-                    new_path = Path(p)
-                    if not new_path.exists():
-                        return
-        else:
-            for p in path:
-                new_path = Path(p)
-                if not new_path.exists():
-                    return
+                if new_path.exists():
+                    new_pathes.append(new_path)
+                    continue
 
-        for f in new_path.rglob("*.m"):
-            self._addpath_scope[f.stem] = f.absolute()
+                # 2. Try path
+                new_path = Path(p)
+                if new_path.exists():
+                    new_pathes.append(new_path)
+                    continue
+                
+                # 3. Check cwd itself
+                if p == self._cwd.name:
+                    new_pathes.append(self._cwd)
+                    continue
+
+        else:
+            for p in pathes:
+                new_path = Path(p)
+                if new_path.exists():
+                    new_pathes.append(new_path)
+        
+        for new_path in new_pathes:
+            for f in new_path.rglob("*.m"):
+                self._addpath_scope[f.stem] = f.resolve()
 
     def enter_scope(self, func_name: str) -> None:
         target_dict = get_dict_by_path(self._currfile_scope, self._currfile_scope_index)
@@ -97,6 +111,14 @@ class SymbolTable:
         return SymbolType.UNK
 
     def __str__(self) -> str:
-        return json.dumps(self._currfile_scope, sort_keys=False, indent=4)
+        out_str = json.dumps(self._currfile_scope, sort_keys=False, indent=4)
+        out_str += "\n----------\n"
+        for k in self._addpath_scope.keys():
+            out_str += k + "\n"
+        out_str += "\n----------\n"
+        for k in self._dir_scope.keys():
+            out_str += k + "\n"
+        out_str += "\n----------\n"
+        return out_str
 
 

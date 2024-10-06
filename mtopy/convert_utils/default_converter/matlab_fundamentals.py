@@ -13,6 +13,12 @@ class MatlabFundamentals:
     
     def clear(self, args: list[ast.AST]) -> ast.AST:
         return ast.Constant(value="# clear")
+    
+    def addpath(self, args: list[ast.AST]) -> ast.AST:
+        return ast.Constant(value="# addpath")
+    
+    def genpath(self, args: list[ast.AST]) -> ast.AST:
+        return ast.Constant(value="# genpath")
 
     def zeros(self, args: list[ast.AST]) -> ast.AST:
         """Generate AST for numpy.zeros() call"""

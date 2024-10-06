@@ -20,8 +20,8 @@ class MatlabToPythonConverter:
         self.reset()
 
     def reset(self) -> None:
-        self._func_table = SymbolTable()
-        self._mptree_converter = MPTreeConverter(symbol_table=self._func_table)
+        self._symboltable = SymbolTable()
+        self._mptree_converter = MPTreeConverter(symbol_table=self._symboltable)
 
     def convert_code(self, matlab_code: str) -> str:
         try:
@@ -50,12 +50,12 @@ class MatlabToPythonConverter:
         python_ast = transformer.visit(python_ast)
         
         python_code = ast.unparse(python_ast)
-
+        
         return python_code
     
     def convert_file(self, src_file_path: str, dest_file_path: str) -> None:
-        self._func_table = SymbolTable(Path(src_file_path).parent)
-        self._mptree_converter = MPTreeConverter(symbol_table=self._func_table)
+        self._symboltable = SymbolTable(Path(src_file_path).parent)
+        self._mptree_converter = MPTreeConverter(symbol_table=self._symboltable)
 
         with open(Path(src_file_path), 'r') as f:
             matlab_code = f.read()
@@ -69,17 +69,17 @@ class MatlabToPythonConverter:
         project_file_list = list(Path(main_file_path).parent.rglob("*.m"))
         project_file_list.insert(0, project_file_list.pop(project_file_list.index(Path(main_file_path))))
 
-        self._func_table = SymbolTable(main_file_path)
+        self._symboltable = SymbolTable(main_file_path)
         for matlab_file in project_file_list:
             print(f"Start converting {matlab_file}")
-            self._mptree_converter = MPTreeConverter(symbol_table=self._func_table)
+            self._mptree_converter = MPTreeConverter(symbol_table=self._symboltable)
 
             with open(matlab_file, 'r', encoding='utf-8') as f:
                 matlab_code = f.read()
 
             python_code = self.convert_code(matlab_code)
 
-            self._func_table = self._mptree_converter.get_symbol_table()
+            self._symboltable = self._mptree_converter.get_symbol_table()
 
             if python_code is None:
                 print(f"Conversion failed for {matlab_file}")
